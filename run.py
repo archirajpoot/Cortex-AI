@@ -42,6 +42,11 @@ fastapi_app = create_fastapi_app(
 def root_redirect():
     return RedirectResponse("/ui/")
 
+# ── 2.5 Health Check Endpoint ────────────────────────────────────────────────
+@fastapi_app.get("/health", include_in_schema=False)
+def health_endpoint():
+    return {"status": "healthy"}
+
 
 # ── 3. Import the Gradio module and patch its API URL ────────────────────────
 #    The api_reset / api_step callbacks look up `app.API` at call-time,

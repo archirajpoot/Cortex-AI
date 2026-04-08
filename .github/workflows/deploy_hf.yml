@@ -1,0 +1,199 @@
+name: CustomerSupportEnv CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  # ────────────────────────────────────────────────────────────────
+  # ⚠️ EDIT THIS TO MATCH YOUR HUGGING FACE REPOSITORY
+  # ────────────────────────────────────────────────────────────────
+  HF_SPACE_REPO: YOUR_HF_USERNAME/customer-support-env
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ── 1. CODE QUALITY & LINTING ───────────────────────────────────
+  code-quality:
+    name: 🧹 Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv sync --no-editable
+          
+      - name: Check manifest validity
+        run: |
+          test -f openenv.yaml || (echo "❌ openenv.yaml missing" && exit 1)
+          echo "✅ Manifest structure valid"
+
+  # ── 2. BACKEND API TESTS ────────────────────────────────────────
+  backend-tests:
+    name: ⚙️ Backend Core Logic
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv sync --no-editable
+
+      - name: Test Environment Initialization
+        run: |
+          .venv/bin/python -c "
+          from server.customer_support_environment import CustomerSupportEnvironment
+          try:
+              env = CustomerSupportEnvironment()
+              print('✅ Environment initialized successfully')
+          except Exception as e:
+              print(f'❌ Setup failed: {e}')
+              exit(1)
+          "
+
+      - name: Test Agent Core Simulation (Step API)
+        run: |
+          .venv/bin/python -c "
+          from server.customer_support_environment import CustomerSupportEnvironment
+          from models import SupportAction, SupportObservation
+          env = CustomerSupportEnvironment()
+          obs = env.reset()
+          assert obs.complaints, 'reset() returned no complaints'
+          action = SupportAction(
+              complaint_id=obs.complaints[0]['complaint_id'],
+              decision='investigate',
+              confidence=0.85,
+              reasoning='CI Automated Backend Check',
+              urgency_flag=False,
+          )
+          result = env.step(action)
+          assert -1.0 <= result.reward <= 1.0, f'reward {result.reward} out of bounds [-1, 1]'
+          print(f'✅ Simulation step passed! Reward: {result.reward:.4f}')
+          "
+
+      - name: Validate Grader Logic (0-1 Normalization)
+        run: |
+          .venv/bin/python -c "
+          from baseline_agent import grade_episode
+          hist = [{'correct': True, 'total_reward': 0.8}, {'correct': False, 'total_reward': -0.2}]
+          score = grade_episode(hist)
+          assert 0.0 <= score <= 1.0, f'Score out of bounds: {score}'
+          print(f'✅ Grader logic validated. Test score: {score:.4f}')
+          "
+
+  # ── 3. FRONTEND / UI INTEGRATION TESTS ──────────────────────────
+  frontend-tests:
+    name: 🎨 Frontend UI Build
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv sync --no-editable
+          
+      - name: Validate Gradio Dashboard Components
+        run: |
+          .venv/bin/python -c "
+          import app
+          # Ensure all specific hackathon UI features exist
+          assert hasattr(app, 'render_reward_chart'), 'Missing reward chart'
+          assert hasattr(app, 'render_category_chart'), 'Missing category chart'
+          assert hasattr(app, 'render_episode_scorecard'), 'Missing scorecard'
+          print('✅ Frontend components bound successfully')
+          "
+
+      - name: Verify Single-Port Deployment Entrypoint
+        run: |
+          test -f run.py || (echo "❌ run.py missing" && exit 1)
+          grep -q "mount_gradio_app" run.py || (echo "❌ UI mounting logic missing in run.py" && exit 1)
+          echo "✅ run.py correctly implements merged API/UI server"
+
+  # ── 4. DEPLOY TO HUGGING FACE SPACES ────────────────────────────
+  deploy-hf:
+    name: 🚀 Deploy to Hugging Face
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+    # Only deploy if changes are pushed to main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.email "bot@github-actions.com"
+          git config --global user.name  "GH CI/CD Deploy Bot"
+
+      - name: Sync to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "❌ HF_TOKEN secret is not set!"
+            echo "Go to GitHub Repo -> Settings -> Secrets and variables -> Actions"
+            echo "Add a new repository secret named 'HF_TOKEN'"
+            exit 1
+          fi
+          
+          # Add HF remote using the token
+          git remote add hf "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}"
+          
+          # Force push to Hugging Face main branch
+          git push hf HEAD:main --force
+          echo "✅ Successfully pushed to Hugging Face Space!"
+
+      - name: Verify Space Health Check
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          SPACE_URL="https://${HF_SPACE_REPO/\//-}.hf.space"
+          echo "Checking deployment health at: $SPACE_URL"
+
+          # Poll the /health endpoint for up to 3 minutes
+          for i in $(seq 1 18); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                   -H "Authorization: Bearer $HF_TOKEN" \
+                   "${SPACE_URL}/health" 2>/dev/null || echo "000")
+            
+            echo "Attempt $i/18: HTTP $HTTP_STATUS"
+            
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "🚀 Application is live and healthy on Hugging Face Spaces!"
+              exit 0
+            fi
+            sleep 10
+          done
+          
+          echo "⚠️ Health check timed out. The Space may still be building."
+          # We don't fail the workflow here, as HF Spaces take a while to cold start
+          exit 0

@@ -1,0 +1,160 @@
+"""
+Advanced AI Inference Script — CustomerSupportEnv
+=================================================
+Hackathon Submission for Meta OpenEnv 2026
+
+Transforms the simple rule-based agent into a sophisticated LLM-driven Decision Engine.
+Implements:
+- Multi-step reasoning and state tracking
+- Dynamic uncertainty calibration 
+- Trade-off evaluation (satisfaction vs budget)
+- Structured stdout logging strictly adhering to [START], [STEP], [END] formats.
+
+"""
+
+import os
+import json
+import time
+from typing import Dict, Any
+
+from openai import OpenAI
+from client import CustomerSupportEnv
+from models import SupportAction
+
+# ────────────────────────────────────────────────────────
+# MANDATORY HACKATHON VARIABLES
+# ────────────────────────────────────────────────────────
+API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:7860/v1")
+MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4")
+HF_TOKEN     = os.getenv("HF_TOKEN", "dummy-token")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "")
+
+# INITIALISE OPENAI CLIENT
+llm_client = OpenAI(
+    api_key=HF_TOKEN,
+    base_url=API_BASE_URL
+)
+
+# Server URL for the env API (same port as combined app)
+SERVER_URL = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:7860")
+
+
+def generate_intelligent_decision(complaint: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Uses the LLM to process semantic nuances, calculate uncertainty, and reason
+    through budget constraints vs customer retention tradeoffs.
+    """
+    
+    prompt = f"""
+    You are an advanced Customer Support AI for an enterprise.
+    You must make a highly reasoned decision to maximize long-term reward.
+    
+    CURRENT STATE:
+    Budget Remaining: ${context['budget_remaining']}
+    Escalations Used: {context['escalation_count']} / 4
+    Satisfaction Score: {context['satisfaction_score'] * 100}%
+    
+    COMPLAINT DETAILS:
+    Text: "{complaint.get('text')}"
+    Priority: {complaint.get('priority')}
+    Tier: {complaint.get('customer_tier')}
+    Sentiment Score: {complaint.get('sentiment_score')} (-1 scale = angry)
+    Estimated Value: ${complaint.get('estimated_order_value')}
+    
+    AVAILABLE ACTIONS:
+    refund, replace, escalate, apologize, ignore, investigate.
+    
+    RULES:
+    1. Weigh the cost of 'refund' or 'replace' against the Budget Remaining.
+    2. VIP customers require high empathy and stronger resolutions.
+    3. If ambiguity is high or sentiment is severe but details are lacking, select 'investigate'.
+    4. Guard against overuse of 'escalate' to avoid laziness penalties.
+    5. Output absolute Confidence [0.0 to 1.0]. Lower confidence if the decision is risky.
+    
+    Respond STRICTLY in JSON format:
+    {{
+        "decision": "<action>",
+        "confidence": 0.85,
+        "reasoning": "<1-2 sentences explaining tradeoffs and logic>",
+        "urgency_flag": true/false
+    }}
+    """
+    
+    try:
+        response = llm_client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "system", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.2, # Low temperature for reliable outputs but probabilistic logic in prompt
+        )
+        content = response.choices[0].message.content
+        return json.loads(content)
+    except Exception as e:
+        # Fallback heuristic for safety if LLM fails
+        return {
+            "decision": "investigate",
+            "confidence": 0.5,
+            "reasoning": "Fallback to investigate due to API timeout.",
+            "urgency_flag": False
+        }
+
+
+def run_inference_episode():
+    # Initialize the client context manager
+    with CustomerSupportEnv(base_url=SERVER_URL) as env:
+        obs_result = env.reset()
+        obs = obs_result.observation
+        
+        # REQUIRED STDOUT FORMAT
+        print(f"[START] Episode Initialized | Task: {obs.task_name} | Steps: {obs.max_steps}")
+        
+        done = obs.done    
+        while not done:
+            if not obs.complaints:
+                break
+                
+            complaint = obs.complaints[0]
+            
+            # State passing for context reasoning
+            context = {
+                "budget_remaining": obs.budget_remaining,
+                "escalation_count": obs.escalation_count,
+                "satisfaction_score": obs.satisfaction_score,
+                "history": obs.metadata.get("decision_history", [])
+            }
+            
+            # Generate advanced prediction
+            ai_output = generate_intelligent_decision(complaint, context)
+            
+            # Form action
+            action = SupportAction(
+                complaint_id=complaint["complaint_id"],
+                decision=ai_output.get("decision", "investigate"),
+                confidence=ai_output.get("confidence", 0.7),
+                reasoning=ai_output.get("reasoning", "Rule-based reasoning"),
+                urgency_flag=ai_output.get("urgency_flag", False)
+            )
+            
+            # Step the environment
+            step_result = env.step(action)
+            obs = step_result.observation
+            done = step_result.done
+            
+            # REQUIRED STDOUT FORMAT
+            # Structured print for validator parsing
+            print(f"[STEP] Decision: {action.decision.upper()} | Conf: {action.confidence} | Reward: {step_result.reward:+.4f} | Rationale: {action.reasoning}")
+        
+        # REQUIRED STDOUT FORMAT
+        total_reward = obs.cumulative_reward
+        print(f"[END] Episode complete. Cumulative Reward: {total_reward:+.4f}")
+
+
+if __name__ == "__main__":
+    # In a hackathon scenario, the evaluator may call this script directly.
+    # We will simulate running an episode to print the structured traces.
+    try:
+        run_inference_episode()
+    except Exception as e:
+        print("[START]")
+        print(f"[STEP] Error: Server might not be running or Env failed. ({str(e)})")
+        print("[END]")

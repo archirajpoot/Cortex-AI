@@ -1,0 +1,19 @@
+spec_version: 1
+name: customer_support_env
+version: 1.0.0
+description: >
+  Real-world AI customer support decision-making environment.
+  An RL agent triages customer complaints (billing, delivery, quality, technical, policy)
+  over multi-step episodes with dynamic reward shaping, confidence calibration,
+  budget constraints, and long-term strategy evaluation.
+  Three difficulty levels: easy → medium → hard.
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+tags:
+  - openenv
+  - customer-support
+  - reinforcement-learning
+  - multi-step
+  - real-world

@@ -1,0 +1,2 @@
+[console_scripts]
+server = practice_env.server.app:main

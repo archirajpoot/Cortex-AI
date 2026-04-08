@@ -103,19 +103,20 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
 
 
 async def main() -> None:
-    # Boot environment. Uses from_docker_image if available, else network baseline.
-    if IMAGE_NAME:
-        env = await CustomerSupportEnv.from_docker_image(IMAGE_NAME)
-    else:
-        SERVER_URL = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:8000")
-        env = CustomerSupportEnv(base_url=SERVER_URL)
-    
     rewards: List[float] = []
     steps_taken = 0
     score = 0.0
     success = False
+    env = None
 
     try:
+        # Boot environment inside the trap so Docker launch exceptions are gracefully handled
+        if IMAGE_NAME:
+            env = await CustomerSupportEnv.from_docker_image(IMAGE_NAME)
+        else:
+            SERVER_URL = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:8000")
+            env = CustomerSupportEnv(base_url=SERVER_URL)
+
         # Robust Retry Loop for startup race conditions
         result = None
         for attempt in range(15):

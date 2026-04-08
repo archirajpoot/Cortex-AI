@@ -116,7 +116,7 @@ async def main() -> None:
     
     rewards: List[float] = []
     steps_taken = 0
-    score = 0.0
+    score = 0.001
     success = False
     env = None
 
@@ -206,14 +206,15 @@ async def main() -> None:
             
             log_step(step=step, action=action_str, reward=reward, done=done, error=error_msg)
 
-        # Normalize score
+        # Normalize score securely within strict grader boundaries (0.001 - 0.999)
         total_reward = sum(rewards)
-        score = max(0.0, min(1.0, (total_reward + 1.0) / 2.0))
+        score = max(0.001, min(0.999, (total_reward + 1.0) / 2.0))
         success = score > 0.4  # Matches typical threshold
         
     except Exception as e:
         print(f"[DEBUG] Fatal Error in main loop: {e}", flush=True)
         log_step(step=1, action="investigate", reward=0.0, done=True, error="fatal structural crash")
+        score = 0.001
 
     finally:
         try:

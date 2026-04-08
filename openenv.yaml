@@ -17,3 +17,14 @@ tags:
   - reinforcement-learning
   - multi-step
   - real-world
+
+tasks:
+  - id: easy_task
+    name: Basic Triage
+    description: Handle 1-2 clear-cut customer complaints per step.
+  - id: medium_task
+    name: Operational Support
+    description: Handle 2-3 ambiguous complaints per step over 4 steps.
+  - id: hard_task
+    name: Enterprise Crisis Management
+    description: Handle 3-5 high-stakes, ambiguous complaints over 5 steps.

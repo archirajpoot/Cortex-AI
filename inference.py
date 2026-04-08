@@ -120,7 +120,8 @@ async def main() -> None:
     success = False
     env = None
 
-    TASK_NAME = os.getenv("TASK_NAME", "support_task")
+    # Ensure orchestrator iterations are logged as exact distinct tasks
+    TASK_NAME = os.getenv("CUSTOMER_SUPPORT_ENV_TASK") or os.getenv("TASK_NAME") or "easy_task"
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
     try:

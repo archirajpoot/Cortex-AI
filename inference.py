@@ -24,9 +24,9 @@ from models import SupportAction
 # ────────────────────────────────────────────────────────
 # MANDATORY HACKATHON VARIABLES
 # ────────────────────────────────────────────────────────
-API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:7860/v1")
-MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4")
-API_KEY      = os.getenv("API_KEY", "dummy-token")
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000/v1")
+MODEL_NAME   = os.environ.get("MODEL_NAME", "gpt-4")
+API_KEY      = os.environ.get("API_KEY", "dummy-token")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "")
 
 # INITIALISE OPENAI CLIENT
@@ -35,8 +35,8 @@ llm_client = OpenAI(
     base_url=API_BASE_URL
 )
 
-# Server URL for the env API (same port as combined app)
-SERVER_URL = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:7860")
+# Server URL for the env API
+SERVER_URL = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:8000")
 
 
 def generate_intelligent_decision(complaint: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -84,7 +84,6 @@ def generate_intelligent_decision(complaint: Dict[str, Any], context: Dict[str, 
         response = llm_client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "system", "content": prompt}],
-            response_format={"type": "json_object"},
             temperature=0.2, # Low temperature for reliable outputs but probabilistic logic in prompt
         )
         content = response.choices[0].message.content
@@ -152,9 +151,4 @@ def run_inference_episode():
 if __name__ == "__main__":
     # In a hackathon scenario, the evaluator may call this script directly.
     # We will simulate running an episode to print the structured traces.
-    try:
-        run_inference_episode()
-    except Exception as e:
-        print("[START]")
-        print(f"[STEP] Error: Server might not be running or Env failed. ({str(e)})")
-        print("[END]")
+    run_inference_episode()

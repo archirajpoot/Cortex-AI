@@ -6,7 +6,10 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import SupportAction, SupportObservation
+try:
+    from .models import SupportAction, SupportObservation
+except ImportError:
+    from models import SupportAction, SupportObservation
 
 
 class CustomerSupportEnv(

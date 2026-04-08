@@ -24,16 +24,14 @@ from models import SupportAction
 # ────────────────────────────────────────────────────────
 # MANDATORY HACKATHON VARIABLES
 # ────────────────────────────────────────────────────────
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000/v1")
-MODEL_NAME   = os.environ.get("MODEL_NAME", "gpt-4")
-API_KEY      = os.environ.get("API_KEY", "dummy-token")
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "")
+import os
 
 # INITIALISE OPENAI CLIENT
 llm_client = OpenAI(
-    api_key=API_KEY,
-    base_url=API_BASE_URL
+    api_key=os.environ["API_KEY"],
+    base_url=os.environ["API_BASE_URL"]
 )
+MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4")
 
 # Server URL for the env API
 SERVER_URL = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:8000")
@@ -80,22 +78,13 @@ def generate_intelligent_decision(complaint: Dict[str, Any], context: Dict[str, 
     }}
     """
     
-    try:
-        response = llm_client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "system", "content": prompt}],
-            temperature=0.2, # Low temperature for reliable outputs but probabilistic logic in prompt
-        )
-        content = response.choices[0].message.content
-        return json.loads(content)
-    except Exception as e:
-        # Fallback heuristic for safety if LLM fails
-        return {
-            "decision": "investigate",
-            "confidence": 0.5,
-            "reasoning": "Fallback to investigate due to API timeout.",
-            "urgency_flag": False
-        }
+    response = llm_client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "system", "content": prompt}],
+        temperature=0.2, # Low temperature for reliable outputs but probabilistic logic in prompt
+    )
+    content = response.choices[0].message.content
+    return json.loads(content)
 
 
 def run_inference_episode():

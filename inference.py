@@ -89,7 +89,7 @@ def generate_intelligent_decision(complaint: Dict[str, Any], context: Dict[str, 
 
 def run_inference_episode():
     # Initialize the client context manager
-    with CustomerSupportEnv(base_url=SERVER_URL) as env:
+    with CustomerSupportEnv(base_url=SERVER_URL).sync() as env:
         obs_result = env.reset()
         obs = obs_result.observation
         

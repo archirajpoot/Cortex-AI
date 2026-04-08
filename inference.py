@@ -116,7 +116,20 @@ async def main() -> None:
     success = False
 
     try:
-        result = await env.reset()
+        # Robust Retry Loop for startup race conditions
+        result = None
+        for attempt in range(15):
+            try:
+                result = await env.reset()
+                break
+            except Exception:
+                await asyncio.sleep(2)
+                
+        if result is None:
+            # Reached end of loop without successfully connecting
+            print("[DEBUG] Timeout connecting to Env after 30 seconds.", flush=True)
+            return
+            
         obs = result.observation
         
         task_name = getattr(obs, "task_name", "support_task")
@@ -184,6 +197,9 @@ async def main() -> None:
         total_reward = sum(rewards)
         score = max(0.0, min(1.0, (total_reward + 1.0) / 2.0))
         success = score > 0.4  # Matches typical threshold
+        
+    except Exception as e:
+        print(f"[DEBUG] Fatal Error in main loop: {e}", flush=True)
 
     finally:
         try:

@@ -94,9 +94,11 @@ def run_inference_episode():
     # Wait for the OpenEnv server to boot up
     for attempt in range(15):
         try:
-            if requests.get(f"{SERVER_URL}/health", timeout=3).status_code == 200:
-                print(f"[START] Server ready at {SERVER_URL}")
-                break
+            # Pinging /docs since /health is not natively attached to create_fastapi_app
+            r = requests.get(f"{SERVER_URL}/docs", timeout=3)
+            # The server is up if we can get a response without a ConnectionError
+            print(f"[START] Server ready at {SERVER_URL}")
+            break
         except Exception:
             pass
         time.sleep(2)

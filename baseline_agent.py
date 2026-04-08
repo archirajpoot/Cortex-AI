@@ -287,7 +287,7 @@ if __name__ == "__main__":
     parser.add_argument("--task",     choices=["easy", "medium", "hard", "all"], default="all")
     parser.add_argument("--episodes", type=int, default=3)
     parser.add_argument("--quiet",    action="store_true")
-    parser.add_argument("--server",   default="http://127.0.0.1:8000")
+    parser.add_argument("--server",   default="http://127.0.0.1:7860")
     args = parser.parse_args()
 
     SERVER  = args.server

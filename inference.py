@@ -129,7 +129,7 @@ async def main() -> None:
         if IMAGE_NAME:
             env = await CustomerSupportEnv.from_docker_image(IMAGE_NAME)
         else:
-            SERVER_URL = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:8000")
+            SERVER_URL = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:7860")
             env = CustomerSupportEnv(base_url=SERVER_URL)
 
         for task_level in ["easy", "medium", "hard"]:

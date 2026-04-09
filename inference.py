@@ -121,9 +121,6 @@ async def main() -> None:
     env = None
 
     # Ensure orchestrator iterations are logged as exact distinct tasks
-    TASK_NAME = os.getenv("CUSTOMER_SUPPORT_ENV_TASK") or os.getenv("TASK_NAME") or "easy_task"
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-
     try:
         # Boot environment inside the trap so Docker launch exceptions are gracefully handled
         if IMAGE_NAME:

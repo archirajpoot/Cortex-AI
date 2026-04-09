@@ -74,7 +74,7 @@ class SupportObservation(Observation):
     episode_step: int = Field(default=0, description="Current step within episode")
     max_steps: int = Field(default=5, description="Maximum steps in this episode")
     cumulative_reward: float = Field(default=0.0, description="Running total reward")
-    satisfaction_score: float = Field(default=1.0, ge=0.0, le=1.0, description="Current customer satisfaction index")
+    satisfaction_score: float = Field(default=0.99, ge=0.0, le=1.0, description="Current customer satisfaction index")
     budget_remaining: float = Field(default=1000.0, description="Remaining resolution budget (USD)")
     escalation_count: int = Field(default=0, description="Number of escalations used so far")
     backlog_size: int = Field(default=0, description="Unresolved complaints from previous steps")

@@ -122,14 +122,15 @@ def grade_episode(history: list) -> float:
     Score = proportion of correct/acceptable decisions × avg normalised reward
     """
     if not history:
-        return 0.0
-    correct = sum(1 for h in history if h.get("correct", False))
-    ratio   = correct / len(history)
-    rewards  = [h.get("reward", 0.0) for h in history]
-    avg_r    = sum(rewards) / len(rewards) if rewards else 0.0
-    # Normalise avg_r from [-1,1] to [0,1]
-    norm_r   = (avg_r + 1.0) / 2.0
-    score    = round((ratio * 0.6 + norm_r * 0.4), 4)
+        score = 0.1
+    else:
+        correct = sum(1 for h in history if h.get("correct", False))
+        ratio   = correct / len(history)
+        rewards  = [h.get("reward", 0.0) for h in history]
+        avg_r    = sum(rewards) / len(rewards) if rewards else 0.0
+        # Normalise avg_r from [-1,1] to [0,1]
+        norm_r   = (avg_r + 1.0) / 2.0
+        score    = round((ratio * 0.6 + norm_r * 0.4), 4)
     # Clamped securely within strict regex boundaries
     return max(0.001, min(0.999, score))
 

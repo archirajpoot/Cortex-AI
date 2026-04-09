@@ -325,7 +325,7 @@ class CustomerSupportEnvironment(Environment):
         self._active_complaints: List[dict] = []
         self._decision_history: List[dict] = []
         self._cumulative_reward: float = 0.0
-        self._satisfaction: float = 1.0
+        self._satisfaction: float = 0.99
         self._budget_remaining: float = 1000.0
         self._escalation_count: int = 0
         self._backlog: List[dict] = []
@@ -344,7 +344,7 @@ class CustomerSupportEnvironment(Environment):
         self._config           = TASK_CONFIGS[self._task_level]
         self._state            = State(episode_id=str(uuid.uuid4()), step_count=0)
         self._cumulative_reward = 0.0
-        self._satisfaction      = 1.0
+        self._satisfaction      = 0.99
         self._budget_remaining  = self._config["budget"]
         self._escalation_count  = 0
         self._backlog           = []
@@ -515,7 +515,7 @@ class CustomerSupportEnvironment(Environment):
         # Satisfaction update
         sat_delta = sat_map.get(decision, 0.0)
         self._satisfaction = round(
-            max(0.0, min(1.0, self._satisfaction + sat_delta * 0.1)), 4
+            max(0.01, min(0.99, self._satisfaction + sat_delta * 0.1)), 4
         )
         if decision == "escalate":
             self._escalation_count += 1

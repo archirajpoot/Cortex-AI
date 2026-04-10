@@ -196,6 +196,18 @@ COMPLAINT_TEMPLATES = {
 CUSTOMER_TIERS = ["vip", "regular", "new"]
 TIER_WEIGHTS   = [0.15, 0.60, 0.25]
 
+# --- PERSONALIZATION DATA ---
+CUSTOMER_NAMES = [
+    "Shreya", "Arjun", "Ananya", "Rahul", "Priya", "Vikram", "Sneha", "Ishaan",
+    "Rohan", "Sanya", "Karan", "Meera", "Aditya", "Zoya", "Yash", "Tanvi"
+]
+
+LAST_ISSUE_MOCK = [
+    "Refund for late delivery", "Technical glitch during checkout",
+    "Damaged product replacement", "Billing inquiry about subscription",
+    "Wrong item received", "Account access recovery", "Coupon code not working"
+]
+
 PRIORITY_MULTIPLIERS = {"critical": 1.6, "high": 1.3, "medium": 1.0, "low": 0.7}
 TIER_MULTIPLIERS     = {"vip": 1.4, "regular": 1.0, "new": 0.8}
 
@@ -244,12 +256,14 @@ TASK_CONFIGS = {
 # ──────────────────────────────────────────────────────────────
 
 def _generate_complaint(template: dict, tier: str) -> dict:
-    """Instantiate a complaint from a template with a fresh UUID and tier."""
+    """Instantiate a complaint from a template with a fresh UUID, tier, and name."""
     c = dict(template)
     c["complaint_id"]          = str(uuid.uuid4())
+    c["customer_name"]         = random.choice(CUSTOMER_NAMES)
     c["customer_tier"]         = tier
     c["days_since_purchase"]   = random.randint(1, 90)
     c["previous_complaints"]   = random.randint(0, 5)
+    c["last_interaction"]      = random.choice(LAST_ISSUE_MOCK) if c["previous_complaints"] > 0 else "None"
     c["estimated_order_value"] = round(random.uniform(20, 600), 2)
     c["ambiguity"]             = template.get("ambiguity", random.uniform(0.1, 0.5))
     return c
@@ -555,6 +569,7 @@ class CustomerSupportEnvironment(Environment):
         for c in self._active_complaints:
             safe_complaints.append({
                 "complaint_id":          c["complaint_id"],
+                "customer_name":         c.get("customer_name", "Valued Customer"),
                 "text":                  c["text"],
                 "category":              c["category"],
                 "priority":              c["priority"],
@@ -562,6 +577,7 @@ class CustomerSupportEnvironment(Environment):
                 "customer_tier":         c.get("customer_tier", "regular"),
                 "days_since_purchase":   c.get("days_since_purchase", 0),
                 "previous_complaints":   c.get("previous_complaints", 0),
+                "last_interaction":      c.get("last_interaction", "None"),
                 "estimated_order_value": c.get("estimated_order_value", 0.0),
                 "context_clues":         c.get("clues", []),
                 "ambiguity_level":       c.get("ambiguity", 0.3),

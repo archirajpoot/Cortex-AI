@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     print()
     print("=" * 60)
-    print("  🚀  CustomerSupportEnv — Single-Port Server")
+    print("  >> CustomerSupportEnv -- Single-Port Server")
     print("=" * 60)
     print(f"  Dashboard : {BASE_URL}/")
     print(f"  API Docs  : {BASE_URL}/docs")

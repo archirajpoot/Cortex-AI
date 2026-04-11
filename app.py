@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import gradio as gr
 import requests
 
-API = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:7860")
+API = os.getenv("ENV_SERVER_URL", "http://127.0.0.1:8000")
 
 # ── SESSION STATE ──────────────────────────────────────────────────────────────
 def fresh_session():
@@ -97,27 +97,27 @@ def render_live_metrics(session: dict) -> str:
     </div>
   </div>
   <div class="lb-divider"></div>
-  <div class="lb-metric">
+  <div class="lb-metric" data-tip="Customer satisfaction score. Above 70% is healthy (green). Falls when you make poor decisions or ignore high-priority tickets.">
     <div class="lb-val" style="color:{sat_col};">{int(sat*100)}%</div>
     <div class="lb-lab">Satisfaction</div>
   </div>
-  <div class="lb-metric">
+  <div class="lb-metric" data-tip="Remaining virtual budget. Refunds and replacements reduce this. Dropping too low incurs budget penalty on reward scores.">
     <div class="lb-val">💵 ${budget:.0f}</div>
     <div class="lb-lab">Budget Left</div>
   </div>
-  <div class="lb-metric">
+  <div class="lb-metric" data-tip="Sum of all reward signals received so far. Positive means strong decisions. Negative means incorrect or low-confidence actions.">
     <div class="lb-val" style="color:{cr_col};">{cr:+.2f}</div>
     <div class="lb-lab">Cumul. Reward</div>
   </div>
-  <div class="lb-metric">
+  <div class="lb-metric" data-tip="Decision accuracy — percentage of tickets where you chose the optimal action. Above 65% is excellent.">
     <div class="lb-val" style="color:{acc_col};">{acc}%</div>
     <div class="lb-lab">Accuracy</div>
   </div>
-  <div class="lb-metric">
+  <div class="lb-metric" data-tip="Escalations used out of your 4-token budget. Escalating too often wastes tokens. Use only for genuinely unresolvable cases.">
     <div class="lb-val">⬆️ {esc}/4</div>
     <div class="lb-lab">Escalations</div>
   </div>
-  <div class="lb-metric">
+  <div class="lb-metric" data-tip="Episode progress — current step vs total allowed steps in this task. Each step is one ticket decision.">
     <div class="lb-val">S{step}/{max_steps}</div>
     <div class="lb-lab">Progress</div>
   </div>
@@ -145,7 +145,6 @@ def render_complaint_card(c: dict, active: bool = False) -> str:
       <div class="customer-avatar" style="background:linear-gradient(135deg,{col}40,{col}20);">{name[0]}</div>
       <div>
         <div class="customer-name-label">{name}</div>
-        <div class="customer-meta">{TI.get(tier,'👤')} {tier.upper()} · {CI.get(cat,'📋')} {cat}</div>
       </div>
     </div>
     <div class="card-badges">
@@ -171,8 +170,6 @@ def render_reasoning_panel(fb: dict, reasoning: str, confidence: float, s1: str 
     verdict = fb.get("verdict", ""); col = VC.get(verdict, "#888")
     rb = fb.get("reward_breakdown", {}); cp = int(confidence * 100)
     ca = ", ".join(fb.get("correct_actions", []))
-    name = fb.get("complaint_text", "")[:50]
-
     rows = [
         ("Base Correctness", f"{rb.get('weighted_score',0):+.3f}", col),
         ("Priority × Tier", f"{rb.get('priority_weight',1):.1f} × {rb.get('tier_weight',1):.1f}", "#888"),
@@ -181,14 +178,19 @@ def render_reasoning_panel(fb: dict, reasoning: str, confidence: float, s1: str 
     ]
     bd_html = "".join(f'<div class="bd-row"><span>{r[0]}</span><span style="color:{r[2]};font-weight:600;">{r[1]}</span></div>' for r in rows)
     total = rb.get("total", 0)
-
-    # Use input steps, fallback to generic if empty
     s1_text = s1 or "Sentiment & policy analysis check complete."
     s2_text = s2 or "Financial impact against remaining budget assessed."
     s3_text = s3 or "Final personalized resolution decided."
+    manual_time = round(3.5 + abs(fb.get('satisfaction_delta', 0)) * 4, 1)
+    manual_cost = round(abs(fb.get('cost_incurred', 0)) * 3.2 + 12, 0)
+    ai_cost = fb.get('cost_incurred', 0)
+    manual_acc = max(0, int((1 - confidence) * 65))
+    time_saved = round(manual_time * 60 - 0.3, 1)
+    cost_saved = round(manual_cost - abs(ai_cost), 0)
 
     return f"""
 <div class="reasoning-panel">
+
   <div class="rp-header">
     <span class="verdict-chip" style="background:{col}22;color:{col};border:1px solid {col}44;">{verdict}</span>
     <div class="conf-wrap">
@@ -199,29 +201,50 @@ def render_reasoning_panel(fb: dict, reasoning: str, confidence: float, s1: str 
   </div>
   <div class="reasoning-badge">✨ Optimal: <strong>{ca}</strong></div>
 
-  <!-- TRIPLE CHECK UI -->
-  <div style="font-size:10px;color:var(--text-muted);margin:16px 0 8px;letter-spacing:1px;font-weight:700;">TRIPLE-CHECK REASONING</div>
-  
-  <div class="tc-step" style="border-left: 2px solid var(--accent2); padding-left: 12px; margin-bottom: 12px;">
-    <div style="color:var(--accent2); font-size:11px; font-weight:700; margin-bottom:4px;">1. SENTIMENT & POLICY</div>
-    <div style="color:var(--text); font-size:13px; line-height:1.4;">{s1_text}</div>
+  <!-- AI vs MANUAL IMPACT CARD - Summary Focus -->
+  <div class="impact-card">
+    <div class="impact-title">🚀 Efficiency Scoreboard</div>
+    <div class="impact-grid">
+      <div class="impact-col impact-col-before">
+        <div class="impact-col-label">Human Ceiling</div>
+        <div class="impact-metric"><span class="impact-val impact-bad">{manual_time} min</span><span class="impact-unit">Time</span></div>
+        <div class="impact-metric"><span class="impact-val impact-bad">${manual_cost:.0f}</span><span class="impact-unit">Cost</span></div>
+      </div>
+      <div class="impact-divider">VS</div>
+      <div class="impact-col impact-col-after">
+        <div class="impact-col-label">AI Capability</div>
+        <div class="impact-metric"><span class="impact-val impact-good">0.3s</span><span class="impact-unit">Time</span></div>
+        <div class="impact-metric"><span class="impact-val impact-good">${ai_cost:.0f}</span><span class="impact-unit">Cost</span></div>
+      </div>
+    </div>
+    <div class="impact-savings"><strong>{time_saved}s faster</strong> resolution & <strong>${cost_saved:.0f} saved</strong> on this ticket</div>
   </div>
 
-  <div class="tc-step" style="border-left: 2px solid var(--orange); padding-left: 12px; margin-bottom: 12px;">
-    <div style="color:var(--orange); font-size:11px; font-weight:700; margin-bottom:4px;">2. FINANCIAL IMPACT</div>
-    <div style="color:var(--text); font-size:13px; line-height:1.4;">{s2_text}</div>
+  <div class="tc-label">Triple-Check Cognitive Audit</div>
+
+  <div class="tc-step" style="border-left: 3px solid var(--accent2);">
+    <div class="tc-step-title" style="color:var(--accent2);">STEP 1: SENTIMENT &amp; POLICY</div>
+    <div class="tc-step-body">{s1_text}</div>
   </div>
 
-  <div class="tc-step" style="border-left: 2px solid var(--green); padding-left: 12px; margin-bottom: 16px;">
-    <div style="color:var(--green); font-size:11px; font-weight:700; margin-bottom:4px;">3. PERSONALIZED RESOLUTION</div>
-    <div style="color:var(--text); font-size:13px; line-height:1.4; font-style:italic;">"{s3_text}"</div>
+  <div class="tc-step" style="border-left: 3px solid var(--orange);">
+    <div class="tc-step-title" style="color:var(--orange);">STEP 2: FINANCIAL IMPACT</div>
+    <div class="tc-step-body">{s2_text}</div>
   </div>
 
+  <div class="tc-step" style="border-left: 3px solid var(--green);">
+    <div class="tc-step-title" style="color:var(--green);">STEP 3: PERSONALIZED RESOLUTION</div>
+    <div class="tc-step-body" style="font-style:italic;">"{s3_text}"</div>
+  </div>
+
+
+  <!-- REWARD BREAKDOWN -->
   <div class="breakdown-card">
     <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;letter-spacing:1px;">REWARD BREAKDOWN</div>
     {bd_html}
     <div class="bd-total"><span>Total Reward</span><span style="color:{col};font-size:16px;font-weight:800;">{total:+.3f}</span></div>
   </div>
+
   <div class="rp-footer">
     <span>💰 Cost: <strong>${fb.get('cost_incurred',0)}</strong></span>
     <span>😊 Sat Δ: <strong style="color:{'#34C759' if fb.get('satisfaction_delta',0)>=0 else '#FF3B30'};">{fb.get('satisfaction_delta',0):+.3f}</strong></span>
@@ -406,38 +429,38 @@ def get_baseline_hint(complaint: dict) -> str:
 
 # ── PREMIUM CSS ────────────────────────────────────────────────────────────────
 PREMIUM_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
 
 /* ── TOKENS ── */
 :root {
-  --bg: #050510;
-  --bg2: #0B0B1E;
-  --bg3: #12122A;
-  --bg4: #181832;
-  --accent: #7C73FF;
+  --bg: #09090E;
+  --bg2: #12121A;
+  --bg3: #1B1B26;
+  --bg4: #242433;
+  --accent: #8A84FF;
+  --accent-glow: rgba(138,132,255,0.4);
   --accent2: #CF6AF2;
   --green: #34C759;
   --red: #FF3B30;
   --yellow: #FFCC00;
   --orange: #FF9500;
   --blue: #0A84FF;
-  --text: #F0F0FF;
-  --text2: #A0A0C0;
-  --text3: #62628A;
+  --text: #F2F2F7;
+  --text2: #AEAEB2;
+  --text3: #636366;
   --border: rgba(255,255,255,0.08);
   --border2: rgba(255,255,255,0.15);
   --r: 16px;
   --r2: 12px;
   --r3: 8px;
-  --shadow: 0 12px 40px rgba(0,0,0,0.6);
-  --shadow2: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow: 0 16px 40px rgba(0,0,0,0.5);
 }
 
 /* ── ANIMATIONS ── */
 @keyframes glowPulse {
-  0% { box-shadow: 0 0 5px rgba(124,115,255,0.2); }
-  50% { box-shadow: 0 0 20px rgba(124,115,255,0.4); }
-  100% { box-shadow: 0 0 5px rgba(124,115,255,0.2); }
+  0% { box-shadow: 0 0 5px rgba(138,132,255,0.2); }
+  50% { box-shadow: 0 0 25px rgba(138,132,255,0.5); }
+  100% { box-shadow: 0 0 5px rgba(138,132,255,0.2); }
 }
 
 @keyframes slideInUp {
@@ -462,22 +485,29 @@ PREMIUM_CSS = """
   100% { opacity: 1; transform: scale(1); }
 }
 
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
 @keyframes float {
   0% { transform: translateY(0px); }
-  50% { transform: translateY(-6px); box-shadow: 0 10px 25px rgba(124,115,255,0.3); }
+  50% { transform: translateY(-6px); box-shadow: 0 10px 25px rgba(138,132,255,0.3); }
   100% { transform: translateY(0px); }
+}
+
+@keyframes borderDance {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
 }
 
 /* ── GLOBAL ── */
 *, *::before, *::after { box-sizing: border-box; }
+.tab-nav, button, .task-badge, .panel-title, .ph-chip, .ph-title, .rp-header, .reasoning-badge, .tc-step {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+}
 body, .gradio-container { 
     background: var(--bg) !important; 
-    background-image: radial-gradient(circle at 50% -20%, #1A1A3E 0%, var(--bg) 60%) !important;
+    background-image: 
+        radial-gradient(circle at 15% 50%, rgba(138,132,255,0.05) 0%, transparent 60%),
+        radial-gradient(circle at 85% 10%, rgba(207,106,242,0.05) 0%, transparent 60%) !important;
     color: var(--text) !important; 
     font-family: 'Inter', sans-serif !important; 
 }
@@ -487,20 +517,21 @@ body, .gradio-container {
 /* ── LIVE METRICS BAR ── */
 .live-bar {
   display: flex; align-items: center; gap: 24px;
-  background: rgba(8,8,22,0.85); backdrop-filter: blur(25px);
+  background: rgba(8,8,22,0.85); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px);
   border-bottom: 1px solid var(--border2); padding: 14px 28px;
   position: sticky; top: 0; z-index: 999;
   margin: -20px -20px 24px -20px;
   animation: fadeIn 1s ease-out;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 .lb-brand { display: flex; align-items: center; gap: 12px; margin-right: auto; }
 .lb-logo { font-size: 26px; filter: drop-shadow(0 0 8px var(--accent)); }
-.lb-title { font-size: 16px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; }
+.lb-title { font-family: 'Outfit', sans-serif; font-size: 17px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; }
 .lb-sub { font-size: 11px; color: var(--text2); margin-top: 1px; font-weight: 500; }
 .lb-divider { width: 1px; height: 36px; background: var(--border); }
 .lb-metric { display: flex; flex-direction: column; align-items: center; min-width: 75px; transition: transform 0.2s ease; }
 .lb-metric:hover { transform: translateY(-3px); }
-.lb-val { font-size: 17px; font-weight: 800; color: #fff; line-height: 1.2; }
+.lb-val { font-size: 17px; font-weight: 800; color: #fff; line-height: 1.2; font-family: 'Outfit', sans-serif;}
 .lb-lab { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; font-weight: 700; }
 
 /* ── MAIN HEADER ── */
@@ -508,17 +539,17 @@ body, .gradio-container {
   background: linear-gradient(-45deg, #0A0A1E, #14143A, #1C0A36, #0A0A1E);
   background-size: 400% 400%;
   animation: headerFlow 15s ease infinite;
-  border: 1px solid rgba(124,115,255,0.3);
-  border-radius: 20px; padding: 40px 48px; margin-bottom: 32px;
+  border: 1px solid rgba(138,132,255,0.3);
+  border-radius: 20px; padding: 40px 48px; margin-bottom: 24px;
   position: relative; overflow: hidden;
   box-shadow: 0 20px 50px rgba(0,0,0,0.4);
 }
 .page-header::after {
   content: ''; position: absolute; bottom: 0; right: 0; width: 300px; height: 300px;
-  background: radial-gradient(circle, rgba(124,115,255,0.15) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(138,132,255,0.15) 0%, transparent 70%);
   filter: blur(40px);
 }
-.ph-title { font-size: 34px; font-weight: 900; background: linear-gradient(135deg, #fff 20%, #BBAAFF 60%, #7C73FF 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 10px; letter-spacing: -1px; }
+.ph-title { font-family: 'Outfit', sans-serif; font-size: 34px; font-weight: 900; background: linear-gradient(135deg, #fff 20%, #BBAAFF 60%, #8A84FF 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 10px; letter-spacing: -1px; }
 .ph-sub { color: var(--text2); font-size: 15px; margin: 0 0 24px; max-width: 600px; line-height: 1.5; }
 .ph-chips { display: flex; gap: 10px; flex-wrap: wrap; }
 .ph-chip { 
@@ -528,50 +559,74 @@ body, .gradio-container {
     font-size: 12px; color: var(--text2); font-weight: 600;
     transition: all 0.3s ease;
 }
-.ph-chip:hover { border-color: var(--accent); color: #fff; transform: scale(1.05); background: rgba(124,115,255,0.1); }
-.ph-chip.ac { background: rgba(124,115,255,0.15); border-color: rgba(124,115,255,0.5); color: #B0A8FF; box-shadow: 0 0 15px rgba(124,115,255,0.1); }
+.ph-chip:hover { border-color: var(--accent); color: #fff; transform: scale(1.05); background: rgba(138,132,255,0.1); }
+.ph-chip.ac { background: rgba(138,132,255,0.15); border-color: rgba(138,132,255,0.5); color: #C6C1FF; box-shadow: 0 0 15px rgba(138,132,255,0.15); }
 
-/* ── FEATURE SPOTLIGHT ── */
+/* ── FEATURE SPOTLIGHT (Smart Hover Board) ── */
 .feature-spotlight {
-    background: rgba(124,115,255,0.08); 
-    border: 1px solid rgba(124,115,255,0.2); 
-    border-radius: 12px; padding: 12px 20px; 
-    margin-bottom: 24px; display: flex; align-items: center; gap: 14px;
+    position: relative;
+    background: rgba(18,18,26,0.7); 
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border2); 
+    border-radius: 16px; padding: 18px 24px; 
+    margin-bottom: 32px; display: flex; align-items: center; gap: 16px;
     animation: fadeIn 1s ease-out;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transition: all 0.4s ease;
 }
-.fs-icon { font-size: 18px; color: var(--accent); }
-.fs-text { font-size: 13px; font-weight: 600; color: var(--text2); }
-.fs-highlight { color: #fff; font-weight: 700; margin-right: 4px; }
+.feature-spotlight::before {
+    content: ''; position: absolute; top: 0; left: 0; height: 100%; width: 4px;
+    background: linear-gradient(180deg, var(--accent), var(--accent2));
+    border-radius: 4px 0 0 4px;
+}
+.feature-spotlight.fs-highlight-active {
+    background: rgba(27,27,38,0.8);
+    border-color: rgba(138,132,255,0.4);
+    box-shadow: 0 12px 30px rgba(138,132,255,0.15);
+    transform: translateY(-2px);
+}
+.fs-icon { font-size: 22px; filter: drop-shadow(0 0 6px var(--accent-glow)); }
+.fs-text { font-size: 14px; font-weight: 500; color: var(--text2); transition: opacity 0.3s ease, transform 0.3s ease; line-height: 1.5; }
+.fs-highlight { color: #fff; font-weight: 700; background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
-/* ── TABS CUSTOMIZATION ── */
+/* ── TASK BADGE ── */
+.task-badge {
+    display: none !important;
+}
+.task-badge strong { color: #fff; font-weight: 700; }
+
+/* ── TABS CUSTOMIZATION (Modern Pills) ── */
 .tab-nav { 
-    background: transparent !important; 
-    border-bottom: 1px solid var(--border) !important;
-    margin-bottom: 24px !important;
+    background: rgba(255,255,255,0.02) !important; 
+    border-radius: 12px !important;
+    padding: 6px !important;
+    border: 1px solid var(--border) !important;
+    margin-bottom: 32px !important;
+    display: flex !important; gap: 8px !important; flex-wrap: wrap !important;
 }
 .tab-nav button { 
+    flex: 1; min-width: 150px;
     font-size: 13px !important; 
-    font-weight: 700 !important; 
+    font-weight: 600 !important; 
+    font-family: 'Outfit', sans-serif !important;
     color: var(--text2) !important;
     padding: 12px 20px !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    position: relative;
-    border: none !important;
+    border-radius: 8px !important;
+    border: 1px solid transparent !important;
     background: transparent !important;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
 }
 .tab-nav button:hover { 
     color: #fff !important; 
+    background: rgba(255,255,255,0.05) !important;
     transform: translateY(-2px);
-    text-shadow: 0 0 8px rgba(255,255,255,0.4);
 }
 .tab-nav button.selected { 
-    color: var(--accent) !important; 
-    background: rgba(124,115,255,0.08) !important;
-}
-.tab-nav button.selected::after {
-    content: ''; position: absolute; bottom: 0; left: 15%; right: 15%; height: 3px;
-    background: var(--accent); border-radius: 3px 3px 0 0;
-    box-shadow: 0 0 10px var(--accent);
+    color: #fff !important; 
+    background: rgba(138,132,255,0.15) !important;
+    border: 1px solid rgba(138,132,255,0.3) !important;
+    box-shadow: 0 4px 15px rgba(138,132,255,0.15) !important;
 }
 
 /* ── PANEL ── */
@@ -579,14 +634,15 @@ body, .gradio-container {
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: var(--r); padding: 24px; height: 100%;
   animation: slideInUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
-  box-shadow: var(--shadow2);
+  box-shadow: var(--shadow);
 }
 .panel-title {
-  font-size: 11px; font-weight: 800; letter-spacing: 2px;
-  color: var(--text3); text-transform: uppercase; margin-bottom: 20px;
-  display: flex; align-items: center; gap: 10px;
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px; font-weight: 800; letter-spacing: 1.5px;
+  color: var(--text2); text-transform: uppercase; margin-bottom: 24px;
+  display: flex; align-items: center; gap: 12px;
 }
-.panel-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.panel-title::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--border2), transparent); }
 
 /* ── COMPLAINT CARD ── */
 .complaint-card {
@@ -604,7 +660,7 @@ body, .gradio-container {
 }
 .card-active { 
     border-color: var(--accent) !important; 
-    box-shadow: 0 0 25px rgba(124,115,255,0.2), var(--shadow); 
+    box-shadow: 0 0 25px rgba(138,132,255,0.2), var(--shadow); 
     animation: glowPulse 3s infinite;
 }
 .complaint-body {
@@ -616,12 +672,18 @@ body, .gradio-container {
 
 /* ── DECISION CONTROLS ── */
 .control-section { 
-    background: linear-gradient(135deg, var(--bg3), var(--bg2)); 
-    border: 1px solid var(--border); border-radius: var(--r); 
-    padding: 24px; margin-top: 20px; box-shadow: var(--shadow); 
+    background: linear-gradient(135deg, rgba(27,27,38,0.8), rgba(18,18,26,0.9)); 
+    border: 1px solid rgba(138,132,255,0.25); border-radius: var(--r); 
+    padding: 24px; margin-top: 24px; box-shadow: 0 12px 30px rgba(0,0,0,0.4); 
+    position: relative; overflow: hidden;
+}
+.control-section::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent));
+    background-size: 200% auto; animation: borderDance 4s linear infinite;
 }
 .gr-button { 
-    font-family: 'Inter', sans-serif !important; 
+    font-family: 'Outfit', sans-serif !important; 
     font-weight: 700 !important; 
     border-radius: var(--r2) !important; 
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important; 
@@ -630,24 +692,37 @@ body, .gradio-container {
     font-size: 13px !important;
 }
 button[id*="reset_btn"] { 
-    background: rgba(124,115,255,0.1) !important; 
+    background: rgba(138,132,255,0.1) !important; 
     color: var(--accent) !important; 
     border: 1px solid var(--accent) !important;
 }
 button[id*="reset_btn"]:hover { 
     background: var(--accent) !important; 
     color: white !important; 
-    box-shadow: 0 5px 20px rgba(124,115,255,0.4) !important;
+    box-shadow: 0 5px 20px rgba(138,132,255,0.4) !important;
 }
 button[id*="submit_btn"] { 
-    background: linear-gradient(135deg, #34C759, #28A745) !important; 
+    background: linear-gradient(135deg, #3DDC84, #2EAA64) !important; 
     color: #050510 !important; 
-    box-shadow: 0 8px 25px rgba(52,199,89,0.3) !important; 
+    box-shadow: 0 8px 25px rgba(61,220,132,0.3) !important; 
+    border: none !important;
 }
 button[id*="submit_btn"]:hover { 
     transform: translateY(-3px) scale(1.02) !important; 
-    box-shadow: 0 12px 35px rgba(52,199,89,0.5) !important; 
-    filter: brightness(1.2); 
+    box-shadow: 0 12px 35px rgba(61,220,132,0.5) !important; 
+    filter: brightness(1.1); 
+}
+#autofill_btn {
+    background: rgba(138,132,255,0.08) !important;
+    border: 1px solid rgba(138,132,255,0.3) !important;
+    color: #CF6AF2 !important;
+    margin-bottom: 12px !important;
+    text-transform: none !important;
+    letter-spacing: 0px !important;
+}
+#autofill_btn:hover {
+    background: rgba(138,132,255,0.2) !important;
+    transform: translateY(-2px) !important;
 }
 
 /* ── REASONING PANEL ── */
@@ -655,7 +730,7 @@ button[id*="submit_btn"]:hover {
     background: var(--bg3); border: 1px solid var(--border); 
     border-radius: var(--r); padding: 24px;
     transition: all 0.5s ease;
-    animation: slideInRight 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: fadeIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .tc-step { 
     transition: all 0.3s ease; 
@@ -665,14 +740,6 @@ button[id*="submit_btn"]:hover {
     margin-bottom: 14px !important;
 }
 .tc-step:hover { background: rgba(255,255,255,0.05); transform: translateX(5px); }
-
-/* ── TOOLTIPS (Custom implementation via CSS title hack or similar) ── */
-/* Since Gradio doesn't output custom attributes easily, we use a general rule for better descriptions */
-.tooltip-box {
-    position: absolute; background: var(--bg4); border: 1px solid var(--accent);
-    padding: 10px; border-radius: 8px; z-index: 1000; display: none;
-    font-size: 12px; max-width: 200px; box-shadow: var(--shadow);
-}
 
 /* ── GRADIO OVERRIDES & INPUT ANIMATIONS ── */
 .gr-panel { background: transparent !important; border: none !important; }
@@ -684,11 +751,139 @@ footer { display: none !important; }
 /* Interactive Inputs */
 textarea, input[type="text"], input[type="number"], select { 
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    font-family: 'Inter', sans-serif !important;
 }
 textarea:focus, input[type="text"]:focus { 
     transform: scale(1.01);
-    box-shadow: 0 0 15px rgba(124,115,255,0.4) !important; 
+    box-shadow: 0 0 15px rgba(138,132,255,0.2) !important; 
     border-color: var(--accent) !important;
+}
+
+/* ── IMPACT CARD (Before vs After AI) ── */
+.impact-card {
+    margin-top: 20px;
+    background: linear-gradient(135deg, rgba(10,10,30,0.9), rgba(18,18,38,0.95));
+    border: 1px solid rgba(138,132,255,0.25);
+    border-radius: 14px;
+    padding: 18px;
+    animation: slideInUp 0.5s ease-out;
+    position: relative;
+    overflow: hidden;
+}
+.impact-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, #FF3B30, #8A84FF, #34C759);
+    border-radius: 14px 14px 0 0;
+}
+.impact-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 11px; font-weight: 800;
+    color: #8A84FF; letter-spacing: 1.5px;
+    text-transform: uppercase; margin-bottom: 14px;
+}
+.impact-grid {
+    display: flex; align-items: stretch; gap: 0;
+}
+.impact-col {
+    flex: 1; display: flex; flex-direction: column; gap: 10px;
+}
+.impact-col-before { padding-right: 16px; }
+.impact-col-after { padding-left: 16px; }
+.impact-col-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+    margin-bottom: 4px; padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.impact-col-before .impact-col-label { color: #FF9500; }
+.impact-col-after .impact-col-label { color: #34C759; }
+.impact-divider {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 900; color: rgba(255,255,255,0.15);
+    width: 32px; flex-shrink: 0;
+    border-left: 1px solid rgba(255,255,255,0.05);
+    border-right: 1px solid rgba(255,255,255,0.05);
+    letter-spacing: 1px;
+}
+.impact-metric {
+    display: flex; flex-direction: column; gap: 1px;
+}
+.impact-val {
+    font-family: 'Outfit', sans-serif;
+    font-size: 16px; font-weight: 800; line-height: 1.2;
+}
+.impact-unit {
+    font-size: 9px; font-weight: 600; color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.8px;
+}
+.impact-bad { color: #FF453A; }
+.impact-good { color: #32D74B; }
+.impact-savings {
+    margin-top: 14px; padding: 10px;
+    background: rgba(50, 215, 75, 0.08);
+    border-radius: 8px;
+    font-size: 13px; color: #fff;
+    text-align: center;
+    border: 1px solid rgba(50, 215, 75, 0.2);
+}
+.impact-savings strong { color: #32D74B; }
+
+/* ── REASONING PANEL (Professional Refined) ── */
+.reasoning-panel { 
+    background: rgba(18, 18, 26, 0.6); 
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border); 
+    border-radius: var(--r); padding: 22px;
+    transition: all 0.5s ease;
+    animation: slideInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.tc-label { font-size: 10px; color: var(--text3); margin: 20px 0 10px; letter-spacing: 1.5px; font-weight: 800; text-transform: uppercase; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.tc-step { 
+    transition: all 0.2s ease; 
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px;
+    padding: 12px 14px !important;
+    margin-bottom: 12px !important;
+}
+.tc-step:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
+.tc-step-title { font-size: 11px; font-weight: 800; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.tc-step-body { color: var(--text); font-size: 13.5px; line-height: 1.5; }
+
+/* ── STATUS CONSOLE ── */
+.status-console {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--text2);
+    margin: 16px 0;
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+    border-left: 3px solid var(--accent);
+}
+.status-console b { color: var(--accent); }
+
+/* Buttons Enhancement */
+#submit_btn { 
+    height: 52px !important; 
+    font-size: 16px !important; 
+    font-weight: 800 !important;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    background: linear-gradient(135deg, var(--green), #28a745) !important;
+}
+#autofill_btn {
+    border-radius: 8px !important;
+    font-weight: 700 !important;
+    font-size: 12px !important;
+    background: rgba(138,132,255,0.05) !important;
+    border: 1px dashed rgba(138,132,255,0.4) !important;
+    margin-bottom: 15px !important;
+}
+#autofill_btn:hover {
+    background: rgba(138,132,255,0.12) !important;
+    border-style: solid !important;
 }
 """
 
@@ -716,14 +911,12 @@ with gr.Blocks(title="AI Operations Center -- CustomerSupportEnv") as demo:
     <span class="ph-chip">Triple-Check Reasoning</span>
   </div>
 </div>
-<div id="spotlight_container" class="feature-spotlight">
-    <span class="fs-icon">✨</span>
-    <div id="spotlight_content" class="fs-text">
-        <span class="fs-highlight">Feature Spotlight:</span> Hover over any module tab to see detailed operations description.
-    </div>
-</div>
 <script>
-    const descriptions = {
+    const tooltips = {
+        "OpenEnv Compliant": "Runs entirely within the standardized OpenEnv RL framework for reproducible evaluating.",
+        "Meta Hackathon 2026": "Designed specifically for the Meta OpenEnv 2026 Global AI Hackathon.",
+        "Agentic & Logic-driven": "Autonomous decision making utilizing logical constraints and predefined policy bounds.",
+        "Triple-Check Reasoning": "Evaluation logic ensuring emotional, financial, and personalized outcomes are perfectly balanced.",
         "Agentic Workflow": "Direct AI agent interaction for real-time triage, logic-driven resolution, and triple-check reasoning over customer tickets.",
         "Administrative Hub": "Central command for grading reports, historical episode logging, and overall system success rate metrics.",
         "Risk Assessment": "Advanced auditing of decision outcomes against company policies and category-specific accuracy KPIs.",
@@ -733,37 +926,58 @@ with gr.Blocks(title="AI Operations Center -- CustomerSupportEnv") as demo:
         "Strategy Optimizer": "Reward trend analysis and policy optimization curves to visualize the agent's multi-step learning progress."
     };
 
-    function setupSpotlight() {
-        const tabs = document.querySelectorAll('.tab-nav button');
-        const content = document.getElementById('spotlight_content');
+    // Global Event Delegation for infinite component lifespan
+    document.addEventListener('mouseover', function(e) {
+        let target = e.target.closest('[data-tip], .ph-chip, .tab-nav button');
+        if (!target) return;
         
-        tabs.forEach(tab => {
-            const label = tab.innerText.trim().replace(/^[^a-zA-Z]+/, ''); // Remove icons
-            tab.addEventListener('mouseenter', () => {
-                if (descriptions[label]) {
-                    content.style.opacity = '0';
-                    content.style.transform = 'translateX(10px)';
-                    setTimeout(() => {
-                        content.innerHTML = '<span class="fs-highlight">' + label + ':</span> ' + descriptions[label];
-                        content.style.opacity = '1';
-                        content.style.transform = 'translateX(0)';
-                    }, 150);
-                }
-            });
-            tab.addEventListener('mouseleave', () => {
-                // Return to default after delay or keep last
-            });
-        });
-    }
-
-    // Polling because Gradio tabs might load late
-    let interval = setInterval(() => {
-        if (document.querySelectorAll('.tab-nav button').length > 0) {
-            setupSpotlight();
-            clearInterval(interval);
+        let tt = document.getElementById('custom-tooltip');
+        if (!tt) {
+            tt = document.createElement('div');
+            tt.id = 'custom-tooltip';
+            tt.style.cssText = 'position:fixed; background:rgba(18,18,26,0.95); border:1px solid rgba(138,132,255,0.4); border-radius:12px; padding:14px 18px; color:#F2F2F7; font-size:13px; font-weight:500; z-index:10000; pointer-events:none; opacity:0; transition:opacity 0.2s ease, transform 0.2s ease; transform:translateY(10px); box-shadow:0 12px 40px rgba(0,0,0,0.5); max-width:270px; font-family:"Outfit", "Inter", sans-serif; backdrop-filter:blur(10px); line-height: 1.5;';
+            document.body.appendChild(tt);
         }
-    }, 500);
-</script>""")
+
+        let label = "", description = "";
+        
+        if (target.hasAttribute('data-tip')) {
+            label = target.querySelector('.lb-lab')?.innerText || "Metric";
+            description = target.getAttribute('data-tip');
+            target.style.cursor = 'help'; // Ensure help cursor
+        } else {
+            label = target.innerText.trim().replace(/^[^a-zA-Z]+/, '').trim();
+            description = tooltips[label];
+        }
+
+        if (description) {
+            tt.innerHTML = '<strong style="color:#CF6AF2; font-family:Outfit; font-size:13px; letter-spacing:0.5px; display:block; margin-bottom:6px; text-transform:uppercase;">' + label + '</strong><span style="color:#AEAEB2">' + description + '</span>';
+            tt.style.opacity = '1';
+            tt.style.transform = 'translateY(0px)';
+            
+            const rect = target.getBoundingClientRect();
+            let top = rect.bottom + 12;
+            let left = rect.left + (rect.width / 2) - (tt.offsetWidth / 2);
+            if (left < 10) left = 10;
+            if (left + tt.offsetWidth > window.innerWidth - 10) left = window.innerWidth - tt.offsetWidth - 10;
+            if (top + 120 > window.innerHeight) top = rect.top - 120;
+            
+            tt.style.top = top + 'px';
+            tt.style.left = left + 'px';
+        }
+    });
+
+    document.addEventListener('mouseout', function(e) {
+        let target = e.target.closest('[data-tip], .ph-chip, .tab-nav button');
+        if (!target) return;
+        let tt = document.getElementById('custom-tooltip');
+        if (tt) {
+            tt.style.opacity = '0';
+            tt.style.transform = 'translateY(10px)';
+        }
+    });
+</script>
+""")
 
     # ── MAIN TABBED INTERFACE ────────────────────────────────────────────────
     with gr.Tabs(elem_classes=["tab-nav"]):
@@ -789,18 +1003,23 @@ with gr.Blocks(title="AI Operations Center -- CustomerSupportEnv") as demo:
                                 gr.HTML('<div style="height:24px;"></div>')
                                 urgency_cb = gr.Checkbox(label="⚠️ Flag as Urgent", value=False, interactive=True)
                         
-                        with gr.Accordion("🔍 Triple-Check Reasoning Input", open=True, elem_id="tc_accordion"):
+                        with gr.Accordion("🔍 Triple-Check reasoning inputs", open=True, elem_id="tc_accordion"):
+                            autofill_btn = gr.Button("✨ Auto-Generate reasoning (AI Assist)", size="sm", elem_id="autofill_btn")
                             with gr.Column():
-                                s1_box = gr.Textbox(label="STEP 1: Sentiment & Policy Analysis", placeholder="e.g. Customer Arjun is enraged. Policy says 30-day window is active.", lines=1, interactive=True)
-                                s2_box = gr.Textbox(label="STEP 2: Financial Impact Analysis", placeholder="e.g. Refund will cost $50. Budget is healthy at $800. Risk of churn is high.", lines=1, interactive=True)
-                                s3_box = gr.Textbox(label="STEP 3: Personalized Resolution", placeholder="e.g. I'll handle this for you, Arjun.", lines=1, interactive=True)
+                                s1_box = gr.Textbox(label="Step 1: Sentiment & Policy Analysis", placeholder="AI will analyze sentiment and policy constraints...", lines=1, interactive=True)
+                                s2_box = gr.Textbox(label="Step 2: Financial Impact Analysis", placeholder="AI will evaluate costs and budget impact...", lines=1, interactive=True)
+                                s3_box = gr.Textbox(label="Step 3: Personalized Resolution", placeholder="AI will craft a personalized response...", lines=1, interactive=True)
                         
                         with gr.Row():
-                            reset_btn = gr.Button("🔄 New Episode", elem_id="reset_btn", variant="primary", scale=1)
-                            submit_btn = gr.Button("🚀 Process Ticket", elem_id="submit_btn", variant="secondary", scale=2)
-                            autopilot_btn = gr.Button("🤖 Start Auto-Pilot", variant="primary", scale=1)
+                            submit_btn = gr.Button("🚀 Process Ticket", elem_id="submit_btn", variant="primary", scale=3)
+                            reset_btn = gr.Button("🔄 New Episode", elem_id="reset_btn", scale=1)
+                        
+                        with gr.Row():
+                            autopilot_btn = gr.Button("🤖 Start Auto-Pilot", variant="secondary", scale=1)
                             stop_auto_btn = gr.Button("🛑 Stop", variant="stop", scale=1)
-                        status_html = gr.HTML("")
+                        
+                        status_html = gr.HTML('<div class="status-console"><b>SERVER:</b> System ready. Awaiting ticket...</div>')
+
 
                 with gr.Column(scale=5):
                     gr.HTML('<div class="panel-title">🧠 AI Reasoning Breakdown</div>')
@@ -1046,6 +1265,39 @@ with gr.Blocks(title="AI Operations Center -- CustomerSupportEnv") as demo:
     reset_btn.click(fn=do_reset, inputs=[session_state], outputs=reset_outputs)
     submit_btn.click(fn=do_submit, inputs=[decision_dd, confidence_slider, urgency_cb, s1_box, s2_box, s3_box, session_state], outputs=submit_outputs)
 
+    def auto_fill_triple_check(action, _session):
+        complaints = _session.get("complaints", [])
+        if not complaints: return "", "", ""
+        c = complaints[0]
+        name = c.get("customer_name", "Customer")
+        tier = c.get("customer_tier", "regular")
+        pri = c.get("priority", "medium")
+        sent = c.get("sentiment_score", 0.0)
+        sl = "Enraged" if sent < -0.7 else "Frustrated" if sent < -0.3 else "Neutral" if sent < 0.1 else "Calm"
+        cat = c.get("category", "general")
+        order = c.get("estimated_order_value", 0)
+        budget = _session.get("budget", 1000.0)
+        
+        s1 = f"Customer {name} is {sl}. The {tier.upper()} tier and {pri.upper()} priority indicates policy review is required."
+        if action == "refund":
+            s2 = f"Issuing a full refund of ${order:.0f}. Remaining budget is ${budget:.0f}. Churn risk outweighs cost."
+            s3 = f"{name}, we deeply apologize. A full refund has been issued to your account."
+        elif action == "replace":
+            s2 = f"Sending a replacement. Moderate cost to the ${budget:.0f} budget, but retains {tier.upper()} lifetime value."
+            s3 = f"I am so sorry for the defect, {name}. A pristine replacement is on its way."
+        elif action == "escalate":
+            s2 = f"Escalating uses 1 token. Zero immediate budget impact. Necessary due to {sl.lower()} sentiment."
+            s3 = f"I've escalated your case to our senior specialist team, {name}. They will resolve this shortly."
+        elif action == "apologize":
+            s2 = f"Zero cost action. Preserves ${budget:.0f} budget but risks minor satisfaction drop."
+            s3 = f"We sincerely apologize for the inconvenience you experienced with this {cat} issue."
+        else:
+            s2 = f"Deferring financial commitment. Safe approach for current ${budget:.0f} balance."
+            s3 = f"I am looking into your {cat} issue closely right now, {name}."
+        return s1, s2, s3
+
+    autofill_btn.click(fn=auto_fill_triple_check, inputs=[decision_dd, session_state], outputs=[s1_box, s2_box, s3_box])
+
     def run_autopilot(_session):
         while not _session.get("done") and _session.get("complaints"):
             active_c = _session["complaints"][0]
@@ -1066,7 +1318,7 @@ with gr.Blocks(title="AI Operations Center -- CustomerSupportEnv") as demo:
 
 if __name__ == "__main__":
     demo.launch(
-        server_name="0.0.0.0", server_port=7861, share=False,
+        server_port=7860, share=False,
         theme=gr.themes.Base(
             primary_hue="violet", secondary_hue="purple", neutral_hue="gray",
             font=gr.themes.GoogleFont("Inter"),

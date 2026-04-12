@@ -1,3 +1,12 @@
+---
+title: Cortex-AI Customer Support
+emoji: 🧠
+colorFrom: purple
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
 # 🧠 Cortex-AI: Advanced Customer Operations Center
 ### *Meta OpenEnv Hackathon 2026 — Production-Grade Agentic Environment*
 
